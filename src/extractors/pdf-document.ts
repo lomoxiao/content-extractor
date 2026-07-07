@@ -1,14 +1,13 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
-import axios from "axios";
 import type {
   ExtractInput,
   ExtractedAsset,
   ExtractedContent,
   ExtractorOptions
 } from "../types.js";
-import { httpTimeout, httpUserAgent } from "../utils/http.js";
-import { resolveAssetKey } from "../utils/options.js";
+import { downloadPdfBuffer, extractPdfText } from "../utils/pdf.js";
+import { getLogger, resolveAssetKey } from "../utils/options.js";
 
 function derivePdfFilename(url: string, assetKey: string): string {
   try {
@@ -25,32 +24,32 @@ function derivePdfFilename(url: string, assetKey: string): string {
   return `pdf_${assetKey}.pdf`;
 }
 
-async function downloadPdf(
+async function loadPdf(
   url: string,
   filename: string,
-  assetsDir: string,
   options: ExtractorOptions
-): Promise<string> {
-  const papersDir = path.join(assetsDir, "papers");
-  if (!fs.existsSync(papersDir)) fs.mkdirSync(papersDir, { recursive: true });
-
-  const pdfPath = path.join(papersDir, filename);
-  if (fs.existsSync(pdfPath)) return pdfPath;
-
-  const res = await axios.get(url, {
-    responseType: "arraybuffer",
-    timeout: Math.max(httpTimeout(options), 60000),
-    maxRedirects: 5,
-    headers: { "User-Agent": httpUserAgent(options) }
-  });
-
-  const contentType = (res.headers["content-type"] as string) ?? "";
-  if (!contentType.includes("pdf") && !contentType.includes("octet-stream")) {
-    throw new Error(`PDF ではないコンテンツタイプ: ${contentType}`);
+): Promise<{ data?: Buffer; savedPath?: string }> {
+  if (options.assetsDir) {
+    const papersDir = path.join(options.assetsDir, "papers");
+    const pdfPath = path.join(papersDir, filename);
+    if (fs.existsSync(pdfPath)) {
+      return { data: fs.readFileSync(pdfPath), savedPath: pdfPath };
+    }
+    const data = await downloadPdfBuffer(url, options, { requirePdfContentType: true });
+    if (!fs.existsSync(papersDir)) fs.mkdirSync(papersDir, { recursive: true });
+    fs.writeFileSync(pdfPath, data);
+    return { data, savedPath: pdfPath };
   }
 
-  fs.writeFileSync(pdfPath, Buffer.from(res.data as ArrayBuffer));
-  return pdfPath;
+  // テキストのみモードでは DL 失敗を致命傷にしない(従来はそもそも DL しなかった)
+  try {
+    return { data: await downloadPdfBuffer(url, options, { requirePdfContentType: true }) };
+  } catch (err) {
+    getLogger(options).warn(
+      `PDF ダウンロードに失敗(テキストのみモード): ${err instanceof Error ? err.message : String(err)}`
+    );
+    return {};
+  }
 }
 
 export async function fetchPdfDocument(
@@ -62,11 +61,11 @@ export async function fetchPdfDocument(
   const domain = hostnameOf(input.url);
   const title = input.hints?.title ?? filename;
 
-  const assets: ExtractedAsset[] = [];
-  if (options.assetsDir) {
-    const pdfPath = await downloadPdf(input.url, filename, options.assetsDir, options);
-    assets.push({ kind: "pdf", path: pdfPath, sourceUrl: input.url });
-  }
+  const { data, savedPath } = await loadPdf(input.url, filename, options);
+  const assets: ExtractedAsset[] = savedPath
+    ? [{ kind: "pdf", path: savedPath, sourceUrl: input.url }]
+    : [];
+  const bodyText = data ? await extractPdfText(data, options) : undefined;
 
   const tags = input.hints?.tags ?? [];
   const markdown = [
@@ -76,7 +75,8 @@ export async function fetchPdfDocument(
     domain ? `- **ドメイン**: ${domain}` : "",
     `- **ファイル**: ${filename}`,
     tags.length ? `- **タグ**: ${tags.join(", ")}` : "",
-    input.hints?.excerpt ? `\n## 概要\n\n${input.hints.excerpt}` : ""
+    input.hints?.excerpt ? `\n## 概要\n\n${input.hints.excerpt}` : "",
+    bodyText ? `\n## 本文\n\n${bodyText}` : ""
   ]
     .filter((l) => l !== "")
     .join("\n");
@@ -88,7 +88,7 @@ export async function fetchPdfDocument(
     markdown,
     references: [],
     assets,
-    metadata: { filename, siteName: domain }
+    metadata: { filename, siteName: domain, pdfTextExtracted: Boolean(bodyText) }
   };
 }
 

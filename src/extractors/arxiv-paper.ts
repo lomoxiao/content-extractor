@@ -8,6 +8,8 @@ import type {
   ExtractorOptions
 } from "../types.js";
 import { httpTimeout } from "../utils/http.js";
+import { downloadPdfBuffer, extractPdfText } from "../utils/pdf.js";
+import { getLogger } from "../utils/options.js";
 
 export function extractArxivId(url: string): string {
   const match = url.match(/arxiv\.org\/(?:abs|pdf)\/(\d{4}\.\d{4,5}(?:v\d+)?)/);
@@ -51,24 +53,33 @@ export async function fetchArxivMetadata(
   return { title, summary, authors, arxivId, categories, published };
 }
 
-async function downloadPdf(
+async function loadArxivPdf(
   arxivId: string,
-  assetsDir: string,
   options: ExtractorOptions
-): Promise<string> {
-  const papersDir = path.join(assetsDir, "papers");
-  if (!fs.existsSync(papersDir)) fs.mkdirSync(papersDir, { recursive: true });
+): Promise<{ data?: Buffer; savedPath?: string }> {
+  const pdfUrl = `https://arxiv.org/pdf/${arxivId}.pdf`;
 
-  const pdfPath = path.join(papersDir, `${arxivId}.pdf`);
-  if (fs.existsSync(pdfPath)) return pdfPath;
+  if (options.assetsDir) {
+    const papersDir = path.join(options.assetsDir, "papers");
+    const pdfPath = path.join(papersDir, `${arxivId}.pdf`);
+    if (fs.existsSync(pdfPath)) {
+      return { data: fs.readFileSync(pdfPath), savedPath: pdfPath };
+    }
+    const data = await downloadPdfBuffer(pdfUrl, options);
+    if (!fs.existsSync(papersDir)) fs.mkdirSync(papersDir, { recursive: true });
+    fs.writeFileSync(pdfPath, data);
+    return { data, savedPath: pdfPath };
+  }
 
-  const res = await axios.get(`https://arxiv.org/pdf/${arxivId}.pdf`, {
-    responseType: "arraybuffer",
-    timeout: Math.max(httpTimeout(options), 60000),
-    maxRedirects: 5
-  });
-  fs.writeFileSync(pdfPath, Buffer.from(res.data as ArrayBuffer));
-  return pdfPath;
+  // テキストのみモードでは DL 失敗を致命傷にしない(メタデータ+Abstract で続行)
+  try {
+    return { data: await downloadPdfBuffer(pdfUrl, options) };
+  } catch (err) {
+    getLogger(options).warn(
+      `arXiv PDF ダウンロードに失敗(テキストのみモード): ${err instanceof Error ? err.message : String(err)}`
+    );
+    return {};
+  }
 }
 
 export async function fetchArxivPaper(
@@ -78,17 +89,19 @@ export async function fetchArxivPaper(
   const arxivId = extractArxivId(input.url);
   const meta = await fetchArxivMetadata(arxivId, options);
 
-  const assets: ExtractedAsset[] = [];
-  if (options.assetsDir) {
-    const pdfPath = await downloadPdf(arxivId, options.assetsDir, options);
-    assets.push({
-      kind: "pdf",
-      path: pdfPath,
-      sourceUrl: `https://arxiv.org/pdf/${arxivId}.pdf`
-    });
-  }
+  const { data, savedPath } = await loadArxivPdf(arxivId, options);
+  const assets: ExtractedAsset[] = savedPath
+    ? [
+        {
+          kind: "pdf",
+          path: savedPath,
+          sourceUrl: `https://arxiv.org/pdf/${arxivId}.pdf`
+        }
+      ]
+    : [];
+  const bodyText = data ? await extractPdfText(data, options) : undefined;
 
-  const markdown = [
+  const sections = [
     `# ${meta.title}`,
     "",
     `- **著者**: ${meta.authors}`,
@@ -100,7 +113,11 @@ export async function fetchArxivPaper(
     "## Abstract",
     "",
     meta.summary
-  ].join("\n");
+  ];
+  if (bodyText) {
+    sections.push("", "## 本文", "", bodyText);
+  }
+  const markdown = sections.join("\n");
 
   return {
     url: input.url,
@@ -114,7 +131,8 @@ export async function fetchArxivPaper(
       publishedAt: meta.published,
       title: meta.title,
       categories: meta.categories,
-      arxivId
+      arxivId,
+      pdfTextExtracted: Boolean(bodyText)
     }
   };
 }
