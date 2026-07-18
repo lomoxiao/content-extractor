@@ -61,14 +61,16 @@ function parseArticlePage(html: string, url: string): ParsedArticlePage {
 
 /** 2ページ目以降の冒頭に繰り返されるタイトル/1ページ目の先頭行を落とす。 */
 function stripRepeatedLead(text: string, firstPage: ParsedArticlePage): string {
-  const leads = new Set(
-    [firstPage.title, firstPage.text.split("\n")[0]]
-      .map((value) => value?.trim())
-      .filter((value): value is string => Boolean(value))
-  );
+  const leads = [firstPage.title, firstPage.text.split("\n")[0]]
+    .map((value) => value?.trim())
+    .filter((value): value is string => Boolean(value));
+  // 「タイトル（2/2 ページ）」のようにページ表記が付いた繰り返しも落とす。
+  // 本文が1行に連結されるケースを誤削除しないよう、見出し相当の長さの行に限る
+  const isRepeatedLead = (line: string) =>
+    leads.some((lead) => line === lead || (line.startsWith(lead) && line.length <= lead.length + 20));
   const lines = text.split("\n");
   let start = 0;
-  while (start < Math.min(lines.length, 2) && leads.has(lines[start].trim())) {
+  while (start < Math.min(lines.length, 2) && isRepeatedLead(lines[start].trim())) {
     start += 1;
   }
   return lines.slice(start).join("\n").trim();

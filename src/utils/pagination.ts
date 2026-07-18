@@ -71,7 +71,11 @@ export function discoverNextUrl(
   }
 
   const $ = cheerio.load(html);
-  const basePathPrefix = first.pathname.replace(/\/page\/\d+\/?$/, "").replace(/\/$/, "");
+  // 拡張子は除いてプレフィックス比較する(例: news123.html -> news123_2.html 形式を許容)
+  const basePathPrefix = first.pathname
+    .replace(/\/page\/\d+\/?$/, "")
+    .replace(/\/$/, "")
+    .replace(/\.[a-z0-9]+$/i, "");
 
   const resolve = (href: string | undefined): URL | undefined => {
     if (!href) return undefined;

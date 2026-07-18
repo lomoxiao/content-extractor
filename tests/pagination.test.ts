@@ -87,6 +87,14 @@ describe("discoverNextUrl", () => {
     expect(discoverNextUrl(nav, BASE, BASE, PAGINATION_PATTERN_IDS)).toBeUndefined();
   });
 
+  it("拡張子付きパスの _2.html 形式もプレフィックスガードを通す", () => {
+    const first = "https://example.com/news/articles/2607/18/news123.html";
+    const html = page(`<a href="https://example.com/news/articles/2607/18/news123_2.html">次のページ</a>`);
+    const next = discoverNextUrl(html, first, first, PAGINATION_PATTERN_IDS);
+    expect(next?.url).toBe("https://example.com/news/articles/2607/18/news123_2.html");
+    expect(next?.patternId).toBe("next-text");
+  });
+
   it("学習順が既定順より優先される", () => {
     const html = page(
       `<a rel="next" href="${BASE}/page/2">rel</a><a href="${BASE}?page=2">次のページ</a>`
