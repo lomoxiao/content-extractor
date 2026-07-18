@@ -1,6 +1,6 @@
 import type { ExtractInput, ExtractedContent, ExtractorOptions } from "./types.js";
 import { detectSourceType } from "./source-detector.js";
-import { fetchWebArticle } from "./extractors/web-article.js";
+import { fetchWebArticleSmart } from "./extractors/web-playwright.js";
 import { fetchArxivPaper } from "./extractors/arxiv-paper.js";
 import { fetchXPost } from "./extractors/x-post.js";
 import { fetchYoutubeVideo } from "./extractors/youtube-video.js";
@@ -24,6 +24,6 @@ export async function routeExtraction(
       return fetchPdfDocument(resolved, options);
     case "web-article":
     default:
-      return fetchWebArticle(resolved, options);
+      return fetchWebArticleSmart(resolved, options);
   }
 }

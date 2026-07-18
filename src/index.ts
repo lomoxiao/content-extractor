@@ -16,6 +16,12 @@ export async function extractContent(
 
 export { detectSourceType } from "./source-detector.js";
 export { extractReferenceUrls } from "./extractors/web-article.js";
+export {
+  DEFAULT_SESSIONS_DIR,
+  SessionExpiredError,
+  normalizeDomain,
+  resolveSessionPath
+} from "./utils/playwright-session.js";
 
 export type {
   SourceType,

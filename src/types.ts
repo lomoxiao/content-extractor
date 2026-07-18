@@ -91,6 +91,19 @@ export interface ExtractorOptions {
     /** chromium channel。既定 'chrome'。 */
     channel?: string;
   };
+  /**
+   * ログイン必須サイト向けのドメイン別 Playwright セッション設定。
+   * セッションは {dir}/{domain}.json の storageState。未指定なら機能自体が無効。
+   */
+  playwrightSessions?: {
+    /** セッション保存ディレクトリ。既定 ~/.content-extractor/sessions。 */
+    dir?: string;
+    /** 最初からセッション取得するドメイン(サブドメイン一致含む)。 */
+    loginRequiredDomains?: string[];
+    headless?: boolean;
+    /** chromium channel。既定 'chrome'。 */
+    channel?: string;
+  };
   http?: {
     timeoutMs?: number;
     userAgent?: string;
