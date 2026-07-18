@@ -1,6 +1,6 @@
 {
   "name": "@local/content-extractor",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "Shared source-typed content extractor (web / arxiv / youtube / x / pdf) for bookmark-curator and article-to-slides-automation",
   "type": "module",
   "main": "./dist/index.cjs",

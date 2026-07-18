@@ -56,11 +56,30 @@ export interface ExtractorLogger {
   error(message: string): void;
 }
 
+/** 複数ページ記事の巡回設定。未指定なら従来どおり1ページのみ取得する(opt-in)。 */
+export interface PaginationOptions {
+  /** 最大取得ページ数。既定20。 */
+  maxPages?: number;
+  /** ページ間の待機ms。既定500(テストでは0を指定)。 */
+  pageDelayMs?: number;
+  /** domain(小文字・www.除去) -> 成功実績のあるパターンidの優先順。 */
+  domainRules?: Record<string, string[]>;
+  /** パターンが実際に次ページ取得へ繋がったときの通知。永続化は呼び出し側の責務。 */
+  onPatternSuccess?: (domain: string, patternId: string) => void;
+}
+
 /**
  * 抽出器の外部依存を全て注入で受け取るオプション。
  * これにより共有パッケージは各アプリの config に依存しない。
  */
 export interface ExtractorOptions {
+  /**
+   * ページHTML取得の差し替え(未指定なら http fetchText)。
+   * ログイン必須サイト用のPlaywright取得などを外から注入するための継ぎ目。
+   */
+  fetchPage?: (url: string) => Promise<string>;
+  /** web-article の複数ページ巡回。 */
+  pagination?: PaginationOptions;
   /** PDF / 画像の保存先。未指定なら資産 DL をスキップ(= テキストのみモード)。 */
   assetsDir?: string;
   /** YouTube Data API キー。未指定なら字幕のみ取得しメタデータは空。 */
