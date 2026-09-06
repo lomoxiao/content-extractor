@@ -5,6 +5,10 @@ import type { ExtractInput, ExtractedContent, ExtractorOptions } from "../types.
 import { fetchText } from "../utils/http.js";
 import { getLogger } from "../utils/options.js";
 import {
+  createArticleMarkdown,
+  type ArticleMarkdownMethod
+} from "../utils/article-markdown.js";
+import {
   discoverNextUrl,
   normalizeDomain,
   orderPatternIds,
@@ -42,6 +46,8 @@ export function extractReferenceUrls(html: string, baseUrl: string): string[] {
 type ParsedArticlePage = {
   title?: string;
   text: string;
+  plainText: string;
+  markdownMethod: ArticleMarkdownMethod;
   siteName?: string;
   byline?: string;
   publishedTime?: string;
@@ -50,9 +56,13 @@ type ParsedArticlePage = {
 function parseArticlePage(html: string, url: string): ParsedArticlePage {
   const dom = new JSDOM(html, { url });
   const article = new Readability(dom.window.document).parse();
+  const plainText = article?.textContent?.trim() ?? "";
+  const formatted = createArticleMarkdown(article?.content ?? undefined, plainText);
   return {
     title: article?.title ?? undefined,
-    text: article?.textContent?.trim() ?? "",
+    text: formatted.markdown,
+    plainText,
+    markdownMethod: formatted.method,
     siteName: article?.siteName ?? undefined,
     byline: article?.byline ?? undefined,
     publishedTime: article?.publishedTime ?? undefined
@@ -61,17 +71,28 @@ function parseArticlePage(html: string, url: string): ParsedArticlePage {
 
 /** 2ページ目以降の冒頭に繰り返されるタイトル/1ページ目の先頭行を落とす。 */
 function stripRepeatedLead(text: string, firstPage: ParsedArticlePage): string {
-  const leads = [firstPage.title, firstPage.text.split("\n")[0]]
-    .map((value) => value?.trim())
+  const normalizeLead = (value: string | undefined) =>
+    value?.trim().replace(/^#{1,6}\s+/, "");
+  const firstContentLine = firstPage.text.split("\n").find((line) => line.trim());
+  const leads = [firstPage.title, firstContentLine]
+    .map(normalizeLead)
     .filter((value): value is string => Boolean(value));
   // 「タイトル（2/2 ページ）」のようにページ表記が付いた繰り返しも落とす。
   // 本文が1行に連結されるケースを誤削除しないよう、見出し相当の長さの行に限る
   const isRepeatedLead = (line: string) =>
-    leads.some((lead) => line === lead || (line.startsWith(lead) && line.length <= lead.length + 20));
+    leads.some((lead) => {
+      const normalized = normalizeLead(line) ?? "";
+      return normalized === lead || (normalized.startsWith(lead) && normalized.length <= lead.length + 20);
+    });
   const lines = text.split("\n");
   let start = 0;
-  while (start < Math.min(lines.length, 2) && isRepeatedLead(lines[start].trim())) {
-    start += 1;
+  while (start < Math.min(lines.length, 4)) {
+    const line = lines[start].trim();
+    if (!line || isRepeatedLead(line)) {
+      start += 1;
+      continue;
+    }
+    break;
   }
   return lines.slice(start).join("\n").trim();
 }
@@ -153,6 +174,8 @@ export async function fetchWebArticle(
       siteName: firstPage.siteName ?? hostnameOf(input.url),
       author: firstPage.byline,
       publishedAt: firstPage.publishedTime,
+      readerFormatVersion: 2,
+      readerFormatMethod: firstPage.markdownMethod,
       ...(pagesFetched > 1 ? { pagesFetched } : {})
     }
   };

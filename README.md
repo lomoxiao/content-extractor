@@ -39,6 +39,12 @@ const content = await extractContent(
 
 `assetsDir` の有無だけで「フル機能(資産DLあり)」と「テキストのみ(副作用なし)」を切り替えられる。
 
+## Web記事のReader向け本文
+
+Web記事の`markdown`は、ReadabilityのHTMLから見出し、段落、リスト、引用、コード、区切り線を保持した安全なMarkdownサブセットへ変換する。HTML構造が得られない場合は、原文の語句と順番を維持したまま句点境界で段落を補う。
+
+使用した変換方式は`metadata.readerFormatMethod`、形式世代は`metadata.readerFormatVersion`に入り、現在の構造化形式はversion 2である。
+
 ## ビルド
 
 ```bash

@@ -69,6 +69,9 @@ describe("fetchWebArticle (複数ページ巡回)", () => {
     expect(content.markdown).toContain("PAGE2");
     expect(content.markdown).toContain("PAGE3");
     expect(content.metadata.pagesFetched).toBe(3);
+    expect(content.metadata.readerFormatVersion).toBe(2);
+    expect(content.metadata.readerFormatMethod).toBe("readability_html");
+    expect(content.markdown).toMatch(/PAGE1[^]*\n\nPAGE1/);
     expect(onPatternSuccess).toHaveBeenCalledWith("example.com", "rel-next-anchor");
   });
 
